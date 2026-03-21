@@ -1,0 +1,217 @@
+<div class="page">
+  <h1 class="titulo">Lista de tarefas</h1>
+
+  @if (tarefas().length === 0) {
+    <p class="vazio">Nenhuma tarefa cadastrada.</p>
+  } @else {
+    <div
+      class="lista-wrap"
+      cdkDropList
+      [cdkDropListData]="tarefas()"
+      (cdkDropListDropped)="onDrop($event)"
+    >
+      @for (t of tarefas(); track t.id) {
+        <div
+          class="linha"
+          [class.alto-custo]="custoAlto(t)"
+          cdkDrag
+          [cdkDragDisabled]="layoutMobile()"
+        >
+          <span
+            class="drag-hint"
+            cdkDragHandle
+            title="Arrastar para reordenar"
+            aria-hidden="true"
+            >⠿</span
+          >
+          <span class="cell id" data-label="ID">{{ t.id }}</span>
+          <span class="cell nome" data-label="Nome da tarefa">
+            <span class="nome-texto">{{ nomeParaLista(t.nome) }}</span>
+            @if (nomeLongoDemais(t.nome)) {
+              <button
+                type="button"
+                class="btn btn-nome-mais"
+                (click)="abrirNomeCompleto(t.nome); $event.stopPropagation()"
+                (mousedown)="$event.stopPropagation()"
+                aria-label="Ver nome completo da tarefa"
+              >
+                Ver mais
+              </button>
+            }
+          </span>
+          <span class="cell custo" data-label="Custo (R$)">{{
+            t.custo | currency: 'BRL' : 'symbol' : '1.2-2'
+          }}</span>
+          <span class="cell data" data-label="Data limite">{{
+            formatarDataLimite(t.dataLimite)
+          }}</span>
+          @if (layoutMobile()) {
+            <span class="cell ordem-btns" data-label="Ordem">
+              <button
+                type="button"
+                class="btn mini"
+                [disabled]="!podeSubir(t)"
+                (click)="subir(t); $event.stopPropagation()"
+                (mousedown)="$event.stopPropagation()"
+                aria-label="Subir na ordem"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                class="btn mini"
+                [disabled]="!podeDescer(t)"
+                (click)="descer(t); $event.stopPropagation()"
+                (mousedown)="$event.stopPropagation()"
+                aria-label="Descer na ordem"
+              >
+                ↓
+              </button>
+            </span>
+          }
+          <span class="cell acoes">
+            <button
+              type="button"
+              class="btn ghost btn-acao btn-acao-editar"
+              (click)="abrirEditar(t)"
+            >
+              Editar
+            </button>
+            <button
+              type="button"
+              class="btn danger ghost btn-acao btn-acao-excluir"
+              (click)="abrirExcluir(t)"
+            >
+              Excluir
+            </button>
+          </span>
+        </div>
+      }
+    </div>
+  }
+
+  <div class="barra-inferior">
+    <div class="bloco-incluir">
+      <button type="button" class="btn primary btn-incluir" (click)="abrirIncluir()">
+        Incluir
+      </button>
+    </div>
+
+    <footer class="rodape">
+      <strong>Total (soma dos custos):</strong>
+      {{ somaCustos() | currency: 'BRL' : 'symbol' : '1.2-2' }}
+    </footer>
+  </div>
+</div>
+
+@if (formAberto() !== null) {
+  <div class="backdrop" role="presentation" (click)="fecharForm()"></div>
+  <div
+    class="modal"
+    role="dialog"
+    aria-modal="true"
+    [attr.aria-labelledby]="'modal-form-titulo'"
+    (click)="$event.stopPropagation()"
+  >
+    <h2 id="modal-form-titulo" class="modal-titulo">
+      {{ formAberto() === 'incluir' ? 'Incluir tarefa' : 'Editar tarefa' }}
+    </h2>
+
+    @if (erroForm()) {
+      <p class="erro-form" role="alert">{{ erroForm() }}</p>
+    }
+
+    <div class="campo">
+      <label for="tf-nome">Nome da tarefa</label>
+      <input
+        #primeiroCampoForm
+        id="tf-nome"
+        type="text"
+        [ngModel]="formNome()"
+        (ngModelChange)="formNome.set($event)"
+        autocomplete="off"
+      />
+    </div>
+    <div class="campo">
+      <label for="tf-custo">Custo (R$)</label>
+      <input
+        id="tf-custo"
+        type="text"
+        inputmode="decimal"
+        autocomplete="off"
+        [ngModel]="formCustoStr()"
+        (ngModelChange)="onCustoDigitacao($event)"
+        placeholder="Ex.: 150,50"
+        aria-describedby="tf-custo-dica"
+      />
+      <p id="tf-custo-dica" class="campo-dica">
+        Apenas números; use vírgula para centavos. Valor deve ser maior que R$&nbsp;0,00.
+      </p>
+    </div>
+    <div class="campo">
+      <label for="tf-data">Data limite</label>
+      <input
+        id="tf-data"
+        type="date"
+        [ngModel]="formDataLimite()"
+        (ngModelChange)="formDataLimite.set($event)"
+      />
+    </div>
+
+    <div class="modal-acoes">
+      <button
+        type="button"
+        class="btn primary"
+        [disabled]="!podeSalvarFormulario()"
+        (click)="salvarForm()"
+      >
+        Salvar
+      </button>
+      <button type="button" class="btn ghost" (click)="fecharForm()">
+        Cancelar
+      </button>
+    </div>
+  </div>
+}
+
+@if (idExcluir() !== null) {
+  <div class="backdrop" role="presentation" (click)="fecharExcluir()"></div>
+  <div
+    class="modal modal-compacto"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-del-titulo"
+  >
+    <h2 id="modal-del-titulo" class="modal-titulo">Confirmar exclusão</h2>
+    <p class="texto-del">
+      Deseja excluir a tarefa
+      <strong>“{{ nomeExcluindo() }}”</strong>?
+    </p>
+    <div class="modal-acoes">
+      <button type="button" class="btn danger" (click)="confirmarExcluir()">Sim</button>
+      <button type="button" class="btn ghost" (click)="fecharExcluir()">Não</button>
+    </div>
+  </div>
+}
+
+@if (nomeCompletoModal() !== null) {
+  <div
+    class="backdrop"
+    role="presentation"
+    (click)="fecharNomeCompleto()"
+  ></div>
+  <div
+    class="modal modal-nome-completo"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-nome-titulo"
+  >
+    <h2 id="modal-nome-titulo" class="modal-titulo">Nome da tarefa</h2>
+    <p class="nome-completo-texto">{{ nomeCompletoModal() }}</p>
+    <div class="modal-acoes">
+      <button type="button" class="btn primary" (click)="fecharNomeCompleto()">
+        Fechar
+      </button>
+    </div>
+  </div>
+}
