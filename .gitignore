@@ -6,6 +6,9 @@
 /out-tsc
 /bazel-out
 
+# Ambiente local (URL da API)
+.env
+
 # Node
 /node_modules
 npm-debug.log

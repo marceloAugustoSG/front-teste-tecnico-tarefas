@@ -1,9 +1,16 @@
 <div class="page">
   <h1 class="titulo">Lista de tarefas</h1>
 
-  @if (tarefas().length === 0) {
+  @if (erroLista()) {
+    <div class="erro-lista" role="alert">
+      <span class="erro-lista-texto">{{ erroLista() }}</span>
+    </div>
+  }
+
+  @if (!erroLista() && tarefas().length === 0) {
     <p class="vazio">Nenhuma tarefa cadastrada.</p>
-  } @else {
+  }
+  @if (tarefas().length > 0) {
     <div
       class="lista-wrap"
       cdkDropList
@@ -13,62 +20,46 @@
       @for (t of tarefas(); track t.id) {
         <div
           class="linha"
-          [class.alto-custo]="custoAlto(t)"
+          [class.alto-custo]="t.altoCusto"
           cdkDrag
+          [cdkDragData]="t"
           [cdkDragDisabled]="layoutMobile()"
         >
           <span
             class="drag-hint"
             cdkDragHandle
-            title="Arrastar para reordenar"
+            title="Arrastar para reordenar (desktop)"
             aria-hidden="true"
             >⠿</span
           >
           <span class="cell id" data-label="ID">{{ t.id }}</span>
           <span class="cell nome" data-label="Nome da tarefa">
-            <span class="nome-texto">{{ nomeParaLista(t.nome) }}</span>
-            @if (nomeLongoDemais(t.nome)) {
-              <button
-                type="button"
-                class="btn btn-nome-mais"
-                (click)="abrirNomeCompleto(t.nome); $event.stopPropagation()"
-                (mousedown)="$event.stopPropagation()"
-                aria-label="Ver nome completo da tarefa"
-              >
-                Ver mais
-              </button>
-            }
+            <span class="nome-texto">{{ t.nome }}</span>
           </span>
-          <span class="cell custo" data-label="Custo (R$)">{{
-            t.custo | currency: 'BRL' : 'symbol' : '1.2-2'
-          }}</span>
-          <span class="cell data" data-label="Data limite">{{
-            formatarDataLimite(t.dataLimite)
-          }}</span>
-          @if (layoutMobile()) {
-            <span class="cell ordem-btns" data-label="Ordem">
-              <button
-                type="button"
-                class="btn mini"
-                [disabled]="!podeSubir(t)"
-                (click)="subir(t); $event.stopPropagation()"
-                (mousedown)="$event.stopPropagation()"
-                aria-label="Subir na ordem"
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                class="btn mini"
-                [disabled]="!podeDescer(t)"
-                (click)="descer(t); $event.stopPropagation()"
-                (mousedown)="$event.stopPropagation()"
-                aria-label="Descer na ordem"
-              >
-                ↓
-              </button>
-            </span>
-          }
+          <span class="cell custo" data-label="Custo (R$)">{{ t.custo }}</span>
+          <span class="cell data" data-label="Data limite">{{ t.dataLimite }}</span>
+          <span class="cell ordem-btns" data-label="Ordem">
+            <button
+              type="button"
+              class="btn mini"
+              [disabled]="!podeSubir(t)"
+              (click)="subir(t); $event.stopPropagation()"
+              (mousedown)="$event.stopPropagation()"
+              aria-label="Subir na ordem"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              class="btn mini"
+              [disabled]="!podeDescer(t)"
+              (click)="descer(t); $event.stopPropagation()"
+              (mousedown)="$event.stopPropagation()"
+              aria-label="Descer na ordem"
+            >
+              ↓
+            </button>
+          </span>
           <span class="cell acoes">
             <button
               type="button"
@@ -99,7 +90,7 @@
 
     <footer class="rodape">
       <strong>Total (soma dos custos):</strong>
-      {{ somaCustos() | currency: 'BRL' : 'symbol' : '1.2-2' }}
+      {{ somaCustos() }}
     </footer>
   </div>
 </div>
@@ -141,20 +132,20 @@
         autocomplete="off"
         [ngModel]="formCustoStr()"
         (ngModelChange)="onCustoDigitacao($event)"
-        placeholder="Ex.: 150,50"
-        aria-describedby="tf-custo-dica"
+        placeholder="Ex.: 150,50 ou 0"
       />
-      <p id="tf-custo-dica" class="campo-dica">
-        Apenas números; use vírgula para centavos. Valor deve ser maior que R$&nbsp;0,00.
-      </p>
     </div>
     <div class="campo">
       <label for="tf-data">Data limite</label>
       <input
         id="tf-data"
-        type="date"
+        type="text"
+        inputmode="numeric"
+        autocomplete="off"
+        maxlength="10"
+        placeholder="DD/MM/AAAA"
         [ngModel]="formDataLimite()"
-        (ngModelChange)="formDataLimite.set($event)"
+        (ngModelChange)="onDataLimiteDigitacao($event)"
       />
     </div>
 
@@ -190,28 +181,6 @@
     <div class="modal-acoes">
       <button type="button" class="btn danger" (click)="confirmarExcluir()">Sim</button>
       <button type="button" class="btn ghost" (click)="fecharExcluir()">Não</button>
-    </div>
-  </div>
-}
-
-@if (nomeCompletoModal() !== null) {
-  <div
-    class="backdrop"
-    role="presentation"
-    (click)="fecharNomeCompleto()"
-  ></div>
-  <div
-    class="modal modal-nome-completo"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="modal-nome-titulo"
-  >
-    <h2 id="modal-nome-titulo" class="modal-titulo">Nome da tarefa</h2>
-    <p class="nome-completo-texto">{{ nomeCompletoModal() }}</p>
-    <div class="modal-acoes">
-      <button type="button" class="btn primary" (click)="fecharNomeCompleto()">
-        Fechar
-      </button>
     </div>
   </div>
 }

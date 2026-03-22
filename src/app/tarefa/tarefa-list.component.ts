@@ -7,29 +7,31 @@ import {
 } from '@angular/cdk/drag-drop';
 import {
   Component,
-  computed,
   ElementRef,
   effect,
   inject,
+  OnInit,
   signal,
   viewChild,
+  computed,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { map } from 'rxjs';
 
-import { Tarefa, TarefaErro } from './tarefa.model';
-import { TarefaService } from './tarefa.service';
+import { mensagemErroHttp } from './problem-details.util';
+import { TarefaApiService } from './tarefa-api.service';
+import { TarefaErro, TarefaListItem } from './tarefa.model';
 
 const BREAKPOINT_MOBILE = '(max-width: 52rem)';
-const CUSTO_DESTAQUE_MIN = 1000;
-const NOME_MAX_DESKTOP = 42;
-const NOME_MAX_MOBILE = 12;
 
 const MSG_ERRO: Record<TarefaErro, string> = {
   CUSTO_INVALIDO:
-    'Informe apenas números. O custo deve ser maior que zero (R$ 0,00 não é permitido).',
-  DATA_INVALIDA: 'Informe uma data limite válida.',
+    'Informe um custo válido (número ≥ 0), no formato brasileiro (vírgula para centavos).',
+  DATA_INVALIDA: 'Informe uma data limite válida no formato DD/MM/AAAA.',
+  ERRO_REDE:
+    'Não foi possível contactar o servidor. Verifique a conexão e a URL da API.',
+  ERRO_SERVIDOR: 'O servidor devolveu um erro. Tente novamente.',
   NOME_DUPLICADO: 'Já existe uma tarefa com este nome.',
   NOME_OBRIGATORIO: 'O nome da tarefa é obrigatório.',
 };
@@ -40,17 +42,19 @@ const MSG_ERRO: Record<TarefaErro, string> = {
   templateUrl: './tarefa-list.component.html',
   styleUrl: './tarefa-list.component.css',
 })
-export class TarefaListComponent {
-  private readonly tarefaService = inject(TarefaService);
+export class TarefaListComponent implements OnInit {
+  private readonly api = inject(TarefaApiService);
   private readonly breakpoint = inject(BreakpointObserver);
+
+  protected readonly erroLista = signal<string | null>(null);
 
   protected readonly layoutMobile = toSignal(
     this.breakpoint.observe(BREAKPOINT_MOBILE).pipe(map((r) => r.matches)),
     { initialValue: false },
   );
 
-  protected readonly tarefas = this.tarefaService.tarefas;
-  protected readonly somaCustos = this.tarefaService.somaCustos;
+  protected readonly tarefas = this.api.tarefas;
+  protected readonly somaCustos = this.api.somaCustos;
 
   protected readonly formAberto = signal<'incluir' | 'editar' | null>(null);
   protected readonly editandoId = signal<number | null>(null);
@@ -61,15 +65,14 @@ export class TarefaListComponent {
   protected readonly formDataLimite = signal('');
 
   protected readonly erroForm = signal<string | null>(null);
-  protected readonly nomeCompletoModal = signal<string | null>(null);
 
   protected readonly podeSalvarFormulario = computed(() => {
     const nome = this.formNome().trim();
     const custo = this.parseCustoBr(this.formCustoStr());
     const data = this.formDataLimite().trim();
     if (!nome) return false;
-    if (!Number.isFinite(custo) || custo <= 0) return false;
-    return this.dataLimiteValida(data);
+    if (!Number.isFinite(custo) || custo < 0) return false;
+    return this.dataLimiteValidaBr(data);
   });
 
   private readonly primeiroCampoForm = viewChild<ElementRef<HTMLInputElement>>(
@@ -83,56 +86,75 @@ export class TarefaListComponent {
     });
   }
 
-  protected custoAlto(t: Tarefa): boolean {
-    return t.custo >= CUSTO_DESTAQUE_MIN;
+  ngOnInit(): void {
+    this.recarregarLista();
   }
 
-  protected podeSubir(t: Tarefa): boolean {
+  protected recarregarLista(): void {
+    this.erroLista.set(null);
+    this.api.carregar().subscribe({
+      error: (err) =>
+        this.erroLista.set(
+          mensagemErroHttp(err, MSG_ERRO.ERRO_REDE, MSG_ERRO.ERRO_SERVIDOR),
+        ),
+    });
+  }
+
+  protected podeSubir(t: TarefaListItem): boolean {
     const list = this.tarefas();
     const i = list.findIndex((x) => x.id === t.id);
     return i > 0;
   }
 
-  protected podeDescer(t: Tarefa): boolean {
+  protected podeDescer(t: TarefaListItem): boolean {
     const list = this.tarefas();
     const i = list.findIndex((x) => x.id === t.id);
     return i >= 0 && i < list.length - 1;
   }
 
-  protected subir(t: Tarefa): void {
-    this.tarefaService.subir(t.id);
+  protected subir(t: TarefaListItem): void {
+    this.api.subir(t.id).subscribe({
+      error: (err) =>
+        this.erroLista.set(
+          mensagemErroHttp(err, MSG_ERRO.ERRO_REDE, MSG_ERRO.ERRO_SERVIDOR),
+        ),
+    });
   }
 
-  protected descer(t: Tarefa): void {
-    this.tarefaService.descer(t.id);
+  protected descer(t: TarefaListItem): void {
+    this.api.descer(t.id).subscribe({
+      error: (err) =>
+        this.erroLista.set(
+          mensagemErroHttp(err, MSG_ERRO.ERRO_REDE, MSG_ERRO.ERRO_SERVIDOR),
+        ),
+    });
   }
 
-  protected formatarDataLimite(iso: string): string {
-    const [y, m, d] = iso.split('-');
-    if (!y || !m || !d) return iso;
-    return `${d}/${m}/${y}`;
-  }
-
-  protected nomeLongoDemais(nome: string): boolean {
-    return nome.length > this.limiteNomeLista();
-  }
-
-  protected nomeParaLista(nome: string): string {
-    const max = this.limiteNomeLista();
-    if (nome.length <= max) return nome;
-    return nome.slice(0, max).trimEnd() + '…';
-  }
-
-  protected abrirNomeCompleto(nome: string): void {
-    this.nomeCompletoModal.set(nome);
-  }
-
-  protected fecharNomeCompleto(): void {
-    this.nomeCompletoModal.set(null);
+  protected onDrop(event: CdkDragDrop<TarefaListItem[]>): void {
+    if (this.layoutMobile()) return;
+    const copia = [...this.tarefas()];
+    if (
+      event.previousIndex === event.currentIndex ||
+      event.previousIndex < 0 ||
+      event.currentIndex < 0
+    ) {
+      return;
+    }
+    const movido = copia[event.previousIndex];
+    if (!movido) return;
+    moveItemInArray(copia, event.previousIndex, event.currentIndex);
+    this.api.definirOrdemLocal(copia);
+    this.api
+      .reordenarPorArrastar(movido.id, event.previousIndex, event.currentIndex)
+      .subscribe({
+        error: (err) =>
+          this.erroLista.set(
+            mensagemErroHttp(err, MSG_ERRO.ERRO_REDE, MSG_ERRO.ERRO_SERVIDOR),
+          ),
+      });
   }
 
   protected abrirIncluir(): void {
-    this.fecharNomeCompleto();
     this.idExcluir.set(null);
     this.erroForm.set(null);
     this.editandoId.set(null);
@@ -142,19 +164,13 @@ export class TarefaListComponent {
     this.formDataLimite.set('');
   }
 
-  protected abrirEditar(t: Tarefa): void {
-    this.fecharNomeCompleto();
+  protected abrirEditar(t: TarefaListItem): void {
     this.idExcluir.set(null);
     this.erroForm.set(null);
     this.editandoId.set(t.id);
     this.formAberto.set('editar');
     this.formNome.set(t.nome);
-    this.formCustoStr.set(
-      t.custo.toLocaleString('pt-BR', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }),
-    );
+    this.formCustoStr.set(t.custo);
     this.formDataLimite.set(t.dataLimite);
   }
 
@@ -173,6 +189,15 @@ export class TarefaListComponent {
     this.formCustoStr.set(v);
   }
 
+  protected onDataLimiteDigitacao(valor: string): void {
+    const digitos = valor.replace(/\D/g, '').slice(0, 8);
+    let out = '';
+    if (digitos.length > 0) out = digitos.slice(0, 2);
+    if (digitos.length >= 3) out += '/' + digitos.slice(2, 4);
+    if (digitos.length >= 5) out += '/' + digitos.slice(4, 8);
+    this.formDataLimite.set(out);
+  }
+
   protected salvarForm(): void {
     this.erroForm.set(null);
     if (!this.validarFormularioAntesSalvar()) {
@@ -181,34 +206,51 @@ export class TarefaListComponent {
 
     const nome = this.formNome().trim();
     const custo = this.parseCustoBr(this.formCustoStr());
-    const dataLimite = this.formDataLimite().trim();
-    const dto = { nome, custo, dataLimite };
+    const dataIso = this.dataBrParaIso(this.formDataLimite().trim());
+    if (!dataIso) {
+      this.erroForm.set(MSG_ERRO.DATA_INVALIDA);
+      return;
+    }
+    const dto = { nome, custo, dataLimite: dataIso };
 
     const modo = this.formAberto();
     if (modo === 'incluir') {
-      const r = this.tarefaService.incluir(dto);
-      if (r.ok) {
-        this.fecharForm();
-      } else {
-        this.erroForm.set(MSG_ERRO[r.erro]);
-      }
+      this.api.incluir(dto).subscribe({
+        next: (r) => {
+          if (r.ok) {
+            this.fecharForm();
+          } else {
+            this.erroForm.set(r.mensagem ?? MSG_ERRO[r.erro]);
+          }
+        },
+        error: (err) =>
+          this.erroForm.set(
+            mensagemErroHttp(err, MSG_ERRO.ERRO_REDE, MSG_ERRO.ERRO_SERVIDOR),
+          ),
+      });
       return;
     }
 
     if (modo === 'editar') {
       const id = this.editandoId();
       if (id === null) return;
-      const r = this.tarefaService.editar(id, dto);
-      if (r.ok) {
-        this.fecharForm();
-      } else {
-        this.erroForm.set(MSG_ERRO[r.erro]);
-      }
+      this.api.editar(id, dto).subscribe({
+        next: (r) => {
+          if (r.ok) {
+            this.fecharForm();
+          } else {
+            this.erroForm.set(r.mensagem ?? MSG_ERRO[r.erro]);
+          }
+        },
+        error: (err) =>
+          this.erroForm.set(
+            mensagemErroHttp(err, MSG_ERRO.ERRO_REDE, MSG_ERRO.ERRO_SERVIDOR),
+          ),
+      });
     }
   }
 
-  protected abrirExcluir(t: Tarefa): void {
-    this.fecharNomeCompleto();
+  protected abrirExcluir(t: TarefaListItem): void {
     this.fecharForm();
     this.idExcluir.set(t.id);
   }
@@ -219,33 +261,22 @@ export class TarefaListComponent {
 
   protected confirmarExcluir(): void {
     const id = this.idExcluir();
-    if (id !== null) {
-      this.tarefaService.excluir(id);
-    }
-    this.fecharExcluir();
+    if (id === null) return;
+    this.api.excluir(id).subscribe({
+      next: () => this.fecharExcluir(),
+      error: (err) => {
+        this.erroLista.set(
+          mensagemErroHttp(err, MSG_ERRO.ERRO_REDE, MSG_ERRO.ERRO_SERVIDOR),
+        );
+        this.fecharExcluir();
+      },
+    });
   }
 
   protected nomeExcluindo(): string {
     const id = this.idExcluir();
     if (id === null) return '';
     return this.tarefas().find((t) => t.id === id)?.nome ?? '';
-  }
-
-  protected onDrop(event: CdkDragDrop<Tarefa[]>): void {
-    const copia = [...this.tarefas()];
-    if (
-      event.previousIndex === event.currentIndex ||
-      event.previousIndex < 0 ||
-      event.currentIndex < 0
-    ) {
-      return;
-    }
-    moveItemInArray(copia, event.previousIndex, event.currentIndex);
-    this.tarefaService.reordenar(copia.map((x) => x.id));
-  }
-
-  private limiteNomeLista(): number {
-    return this.layoutMobile() ? NOME_MAX_MOBILE : NOME_MAX_DESKTOP;
   }
 
   private validarFormularioAntesSalvar(): boolean {
@@ -257,30 +288,44 @@ export class TarefaListComponent {
       this.erroForm.set(MSG_ERRO.NOME_OBRIGATORIO);
       return false;
     }
-    if (!Number.isFinite(custo) || custo <= 0) {
+    if (!Number.isFinite(custo) || custo < 0) {
       this.erroForm.set(MSG_ERRO.CUSTO_INVALIDO);
       return false;
     }
-    if (!this.dataLimiteValida(dataLimite)) {
+    if (!this.dataLimiteValidaBr(dataLimite)) {
       this.erroForm.set(MSG_ERRO.DATA_INVALIDA);
       return false;
     }
     return true;
   }
 
-  private dataLimiteValida(s: string): boolean {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-    const [y, m, d] = s.split('-').map(Number);
-    const dt = new Date(y, m - 1, d);
+  private dataLimiteValidaBr(s: string): boolean {
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s.trim());
+    if (!m) return false;
+    const dia = Number(m[1]);
+    const mes = Number(m[2]);
+    const ano = Number(m[3]);
+    const dt = new Date(ano, mes - 1, dia);
     return (
-      dt.getFullYear() === y &&
-      dt.getMonth() === m - 1 &&
-      dt.getDate() === d
+      dt.getFullYear() === ano &&
+      dt.getMonth() === mes - 1 &&
+      dt.getDate() === dia
     );
   }
 
+  private dataBrParaIso(s: string): string | null {
+    if (!this.dataLimiteValidaBr(s)) return null;
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s.trim())!;
+    return `${m[3]}-${m[2]}-${m[1]}`;
+  }
+
   private parseCustoBr(s: string): number {
-    const t = s.trim().replace(/\s/g, '');
+    let t = s
+      .trim()
+      .replace(/\u00a0/g, '')
+      .replace(/\u202f/g, '')
+      .replace(/^R\$\s*/i, '')
+      .replace(/\s/g, '');
     if (!t) return NaN;
     if (t.includes(',')) {
       return Number(t.replace(/\./g, '').replace(',', '.'));
