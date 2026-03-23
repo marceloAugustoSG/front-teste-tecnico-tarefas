@@ -184,7 +184,7 @@ export class TarefaListComponent implements OnInit {
     this.editandoId.set(t.id);
     this.formAberto.set('editar');
     this.formNome.set(t.nome);
-    this.formCustoStr.set(t.custo);
+    this.formCustoStr.set(this.custoParaEntradaBr(t.custo));
     this.formDataLimite.set(t.dataLimite);
   }
 
@@ -348,5 +348,15 @@ export class TarefaListComponent implements OnInit {
       return Number(t);
     }
     return Number(t.replace(/\./g, ''));
+  }
+
+  private custoParaEntradaBr(custoFormatado: string): string {
+
+    return custoFormatado
+      .trim()
+      .replace(/\u00a0/g, '')
+      .replace(/\u202f/g, '')
+      .replace(/^R\$\s*/i, '')
+      .trim();
   }
 }
