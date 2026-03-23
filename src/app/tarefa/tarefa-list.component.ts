@@ -48,6 +48,8 @@ export class TarefaListComponent implements OnInit {
 
   protected readonly erroLista = signal<string | null>(null);
 
+  protected readonly mostraCarregando = signal(false);
+
   protected readonly layoutMobile = toSignal(
     this.breakpoint.observe(BREAKPOINT_MOBILE).pipe(map((r) => r.matches)),
     { initialValue: false },
@@ -83,6 +85,18 @@ export class TarefaListComponent implements OnInit {
     effect(() => {
       if (this.formAberto() === null) return;
       setTimeout(() => this.primeiroCampoForm()?.nativeElement.focus(), 0);
+    });
+
+    effect(() => {
+      const emCarregamento = this.api.carregando();
+      if (!emCarregamento) {
+        this.mostraCarregando.set(false);
+        return;
+      }
+
+      // Evita "piscar": só mostra se a requisição demorar.
+      const timer = setTimeout(() => this.mostraCarregando.set(true), 400);
+      return () => clearTimeout(timer);
     });
   }
 

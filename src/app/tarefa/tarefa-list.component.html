@@ -1,4 +1,12 @@
 <div class="page">
+  @if (mostraCarregando()) {
+    <div class="loading-backdrop" role="status" aria-live="polite">
+      <div class="loading-box">
+        <div class="spinner" aria-hidden="true"></div>
+        <p class="loading-texto">Processando...</p>
+      </div>
+    </div>
+  }
   <h1 class="titulo">Lista de tarefas</h1>
 
   @if (erroLista()) {

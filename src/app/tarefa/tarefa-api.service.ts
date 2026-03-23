@@ -3,6 +3,8 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import {
   Observable,
   catchError,
+  defer,
+  finalize,
   map,
   of,
   switchMap,
@@ -57,69 +59,100 @@ export class TarefaApiService {
   private readonly lista = signal<TarefaListItem[]>([]);
   private readonly somaInterna = signal<string>('—');
 
+  private readonly requisicoesAtivas = signal(0);
+
   readonly tarefas = computed(() => this.lista());
   readonly somaCustos = computed(() => this.somaInterna());
+  readonly carregando = computed(() => this.requisicoesAtivas() > 0);
 
   readonly apiUrl = environment.apiUrl;
 
+  private comLoading<T>(factory: () => Observable<T>): Observable<T> {
+    return defer(() => {
+      this.requisicoesAtivas.set(this.requisicoesAtivas() + 1);
+      return factory().pipe(
+        finalize(() => {
+          const atual = this.requisicoesAtivas();
+          this.requisicoesAtivas.set(Math.max(0, atual - 1));
+        }),
+      );
+    });
+  }
+
   carregar(): Observable<void> {
-    return this.http.get<unknown>(TarefaApiUrls.listar()).pipe(
-      map((body) => {
-        const o =
-          body && typeof body === 'object'
-            ? (body as Record<string, unknown>)
-            : {};
-        const raw = o['tarefas'];
-        const arr = Array.isArray(raw) ? raw : [];
-        const items = arr
-          .map(mapTarefaItem)
-          .filter((t): t is TarefaListItem => t !== null);
-        this.lista.set(items);
-        const soma = o['somaCustos'];
-        this.somaInterna.set(
-          typeof soma === 'string' && soma.length > 0 ? soma : '—',
-        );
-      }),
-      map(() => void 0),
+    return this.comLoading(() =>
+      this.http.get<unknown>(TarefaApiUrls.listar()).pipe(
+        map((body) => {
+          const o =
+            body && typeof body === 'object'
+              ? (body as Record<string, unknown>)
+              : {};
+          const raw = o['tarefas'];
+          const arr = Array.isArray(raw) ? raw : [];
+          const items = arr
+            .map(mapTarefaItem)
+            .filter((t): t is TarefaListItem => t !== null);
+          this.lista.set(items);
+          const soma = o['somaCustos'];
+          this.somaInterna.set(
+            typeof soma === 'string' && soma.length > 0 ? soma : '—',
+          );
+        }),
+        map(() => void 0),
+      ),
     );
   }
 
   incluir(dto: TarefaFormDto): Observable<OperacaoResult> {
     const v = this.validarDto(dto);
     if (v) return of({ ok: false, erro: v });
-    return this.http.post<unknown>(TarefaApiUrls.criar(), dto).pipe(
-      switchMap(() => this.carregar().pipe(map(() => ({ ok: true as const })))),
-      catchError((e) => of(this.mapHttpToOperacaoResult(e))),
+    return this.comLoading(() =>
+      this.http.post<unknown>(TarefaApiUrls.criar(), dto).pipe(
+        switchMap(() =>
+          this.carregar().pipe(map(() => ({ ok: true as const }))),
+        ),
+        catchError((e) => of(this.mapHttpToOperacaoResult(e))),
+      ),
     );
   }
 
   editar(id: number, dto: TarefaFormDto): Observable<OperacaoResult> {
     const v = this.validarDto(dto);
     if (v) return of({ ok: false, erro: v });
-    return this.http.put<unknown>(TarefaApiUrls.atualizar(id), dto).pipe(
-      switchMap(() => this.carregar().pipe(map(() => ({ ok: true as const })))),
-      catchError((e) => of(this.mapHttpToOperacaoResult(e))),
+    return this.comLoading(() =>
+      this.http.put<unknown>(TarefaApiUrls.atualizar(id), dto).pipe(
+        switchMap(() =>
+          this.carregar().pipe(map(() => ({ ok: true as const }))),
+        ),
+        catchError((e) => of(this.mapHttpToOperacaoResult(e))),
+      ),
     );
   }
 
   excluir(id: number): Observable<void> {
-    return this.http.delete(TarefaApiUrls.excluir(id)).pipe(
-      switchMap(() => this.carregar()),
-      catchError((e) => throwError(() => e)),
+    return this.comLoading(() =>
+      this.http.delete(TarefaApiUrls.excluir(id)).pipe(
+        switchMap(() => this.carregar()),
+        catchError((e) => throwError(() => e)),
+      ),
     );
   }
 
   subir(id: number): Observable<void> {
-    return this.http.post(TarefaApiUrls.subir(id), null).pipe(
-      switchMap(() => this.carregar()),
-      catchError((e) => throwError(() => e)),
+    return this.comLoading(() =>
+      this.http.post(TarefaApiUrls.subir(id), null).pipe(
+        switchMap(() => this.carregar()),
+        catchError((e) => throwError(() => e)),
+      ),
     );
   }
 
   descer(id: number): Observable<void> {
-    return this.http.post(TarefaApiUrls.descer(id), null).pipe(
-      switchMap(() => this.carregar()),
-      catchError((e) => throwError(() => e)),
+    return this.comLoading(() =>
+      this.http.post(TarefaApiUrls.descer(id), null).pipe(
+        switchMap(() => this.carregar()),
+        catchError((e) => throwError(() => e)),
+      ),
     );
   }
 
@@ -147,10 +180,12 @@ export class TarefaApiService {
         ),
       );
     }
-    return req.pipe(
-      switchMap(() => this.carregar()),
-      catchError((e) =>
-        this.carregar().pipe(switchMap(() => throwError(() => e))),
+    return this.comLoading(() =>
+      req.pipe(
+        switchMap(() => this.carregar()),
+        catchError((e) =>
+          this.carregar().pipe(switchMap(() => throwError(() => e))),
+        ),
       ),
     );
   }
