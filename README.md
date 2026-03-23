@@ -2,6 +2,8 @@
 
 [Link para testar(Vercel)](https://front-teste-tecnico-tarefas.vercel.app/)
 
+[Vídeo demonstrativo](https://www.youtube.com/watch?v=M-cdC1eMgZI)
+
 SPA em **Angular 21** para listagem, cadastro, edição, exclusão e reordenação de tarefas consumindo a **API REST** (Java/Spring). Interface com **locale pt-BR**, entrada de custo e data no **formato brasileiro**, destaque visual para **alto custo** (quando a API sinaliza `altoCusto`) e tratamento de erros alinhado a **RFC 7807** (`ProblemDetail`) na camada HTTP.
 
 ---
